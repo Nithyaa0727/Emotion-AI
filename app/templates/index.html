@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Emotion AI — Facial Affect Recognition</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%23818cf8'/><stop offset='100%25' stop-color='%2322d3ee'/></linearGradient></defs><rect width='100' height='100' rx='22' fill='url(%23g)'/><text y='.9em' font-size='65' x='50%25' text-anchor='middle' dominant-baseline='middle' dy='5'>🧠</text></svg>"/>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { outfit: ['Outfit', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+                    animation: {
+                        'fade-up': 'fadeUp 0.5s ease forwards',
+                        'pop': 'pop 0.35s cubic-bezier(.175,.885,.32,1.275) forwards',
+                        'pulse-dot': 'pulseDot 2s ease-in-out infinite',
+                        'float': 'float 4s ease-in-out infinite',
+                        'scan': 'scan 3s linear infinite',
+                    },
+                    keyframes: {
+                        fadeUp: { from: { opacity: 0, transform: 'translateY(16px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+                        pop: { from: { opacity: 0, transform: 'scale(0.5)' }, to: { opacity: 1, transform: 'scale(1)' } },
+                        pulseDot: { '0%,100%': { boxShadow: '0 0 0 0 rgba(34,197,94,0.5)' }, '50%': { boxShadow: '0 0 0 6px rgba(34,197,94,0)' } },
+                        float: { '0%,100%': { transform: 'translateY(0px)' }, '50%': { transform: 'translateY(-8px)' } },
+                        scan: { '0%': { top: '0%', opacity: 1 }, '80%': { opacity: 1 }, '100%': { top: '100%', opacity: 0 } },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: #07090f;
+            color: #e2e8f0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .ambient {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 5% 5%, rgba(99, 102, 241, 0.08) 0%, transparent 65%),
+                radial-gradient(ellipse 60% 50% at 95% 90%, rgba(34, 211, 238, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 40% at 50% 50%, rgba(168, 85, 247, 0.03) 0%, transparent 70%);
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(24px);
+        }
+
+        .glass-sm {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .grad {
+            background: linear-gradient(135deg, #818cf8, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+
+        .conf-bar {
+            transition: width 0.7s cubic-bezier(.25, .46, .45, .94), background 0.4s;
+        }
+
+        .prob-fill {
+            transition: width 0.5s cubic-bezier(.25, .46, .45, .94);
+        }
+
+        .drop-zone {
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .drop-zone:hover {
+            border-color: rgba(99, 102, 241, 0.5);
+            background: rgba(99, 102, 241, 0.04);
+        }
+
+        .drop-zone.drag-over {
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.08);
+        }
+
+        .mode-tab.active {
+            background: rgba(99, 102, 241, 0.15);
+            color: #a5b4fc;
+            border-color: rgba(99, 102, 241, 0.35) !important;
+        }
+
+        .xai-tab.active {
+            background: rgba(99, 102, 241, 0.12);
+            color: #a5b4fc;
+            border-color: rgba(99, 102, 241, 0.3) !important;
+        }
+
+        .nav-tab.active {
+            background: rgba(99, 102, 241, 0.15);
+            color: #a5b4fc;
+            border-color: rgba(99, 102, 241, 0.35) !important;
+        }
+
+        /* Auth wall */
+        #auth-wall {
+            display: flex;
+        }
+
+        #auth-wall.hidden {
+            display: none;
+        }
+
+        #main-app {
+            display: none;
+        }
+
+        #main-app.visible {
+            display: block;
+        }
+
+        /* Modal */
+        .modal-wrap {
+            display: none;
+        }
+
+        .modal-wrap.open {
+            display: flex;
+        }
+
+        /* Profile dropdown */
+        #profile-dd.open {
+            display: block;
+            animation: fadeUp 0.18s ease forwards;
+        }
+
+        .scan-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.7), transparent);
+            animation: scan 3s linear infinite;
+            pointer-events: none;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: rgba(99, 102, 241, 0.5) !important;
+            background: rgba(255, 255, 255, 0.06) !important;
+        }
+
+        /* Page views */
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        /* XAI image zoom */
+        .xai-img-wrap img {
+            cursor: zoom-in;
+            transition: transform 0.2s;
+        }
+
+        .xai-img-wrap img:hover {
+            transform: scale(1.02);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ambient"></div>
+
+    <!-- ══════════════════════════════════════════════════════
+     AUTH WALL — shown until logged in
+═══════════════════════════════════════════════════════ -->
+    <div id="auth-wall" class="fixed inset-0 z-[200] bg-[#07090f] flex items-center justify-center p-4">
+        <div class="w-full max-w-sm">
+            <!-- Brand -->
+            <div class="text-center mb-8">
+                <div
+                    class="w-16 h-16 rounded-2xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center text-4xl mx-auto mb-4 animate-float">
+                    🧠</div>
+                <h1 class="font-outfit font-800 text-3xl grad tracking-tight">EmotionAI</h1>
+                <p class="text-slate-500 text-sm mt-2">EfficientNetV2-S · 72.95% FER2013 · Alliance University 2025</p>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex p-1 glass rounded-2xl gap-1 mb-5">
+                <button id="wall-login-tab" onclick="wallTab('login')"
+                    class="flex-1 py-2 rounded-xl text-sm font-500 transition-all bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">Sign
+                    In</button>
+                <button id="wall-register-tab" onclick="wallTab('register')"
+                    class="flex-1 py-2 rounded-xl text-sm font-500 transition-all text-slate-400 hover:text-slate-200">Sign
+                    Up</button>
+            </div>
+
+            <div class="glass rounded-2xl p-6">
+                <div id="wall-error"
+                    class="hidden mb-4 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+                </div>
+                <div id="wall-success"
+                    class="hidden mb-4 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm">
+                </div>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-500 font-500 block mb-1.5">Username</label>
+                        <input id="wall-username" type="text" placeholder="Enter your username"
+                            class="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.09] text-sm text-slate-200 placeholder-slate-600 transition-all" />
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-500 font-500 block mb-1.5">Password</label>
+                        <input id="wall-password" type="password" placeholder="Enter your password"
+                            class="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.09] text-sm text-slate-200 placeholder-slate-600 transition-all" />
+                    </div>
+                    <!-- Register-only field -->
+                    <div id="wall-confirm-wrap" class="hidden">
+                        <label class="text-xs text-slate-500 font-500 block mb-1.5">Confirm Password</label>
+                        <input id="wall-confirm" type="password" placeholder="Re-enter your password"
+                            class="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.09] text-sm text-slate-200 placeholder-slate-600 transition-all" />
+                    </div>
+                </div>
+
+                <button id="wall-submit" onclick="wallSubmit()"
+                    class="w-full mt-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-600 text-sm transition-all shadow-lg shadow-indigo-500/20">
+                    Sign In
+                </button>
+
+                <p class="text-center text-xs text-slate-600 mt-4">
+                    <span id="wall-toggle-text">Don't have an account?</span>
+                    <a onclick="wallTab(wallMode==='login'?'register':'login')"
+                        class="text-indigo-400 hover:text-indigo-300 cursor-pointer font-500 ml-1"
+                        id="wall-toggle-link">Sign Up</a>
+                </p>
+            </div>
+
+            <p class="text-center text-xs text-slate-700 mt-6">Alliance University Capstone 2025 · Pavana · Likhitha ·
+                Ankita · Nithya</p>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════
+     MAIN APP — visible after login
+═══════════════════════════════════════════════════════ -->
+    <div id="main-app">
+
+        <!-- NAVBAR -->
+        <header class="sticky top-0 z-50 glass border-b border-white/[0.07]">
+            <div class="max-w-7xl mx-auto px-5 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center text-base">
+                        🧠</div>
+                    <span class="font-outfit font-800 text-lg grad tracking-tight">EmotionAI</span>
+                    <span
+                        class="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-600 tracking-wider uppercase">
+                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>EfficientNetV2-S · 72.95%
+                    </span>
+                </div>
+
+                <!-- Nav tabs -->
+                <div class="hidden sm:flex items-center gap-1 p-1 glass rounded-xl">
+                    <button onclick="showPage('detect')" id="nav-detect"
+                        class="nav-tab active px-4 py-1.5 rounded-lg text-sm font-500 border border-transparent transition-all text-indigo-300">🎯
+                        Detect</button>
+                    <button onclick="showPage('dashboard')" id="nav-dashboard"
+                        class="nav-tab px-4 py-1.5 rounded-lg text-sm font-500 border border-transparent text-slate-400 hover:text-slate-200 transition-all">📊
+                        Dashboard</button>
+                    <button onclick="showPage('xai')" id="nav-xai"
+                        class="nav-tab px-4 py-1.5 rounded-lg text-sm font-500 border border-transparent text-slate-400 hover:text-slate-200 transition-all">🔬
+                        XAI</button>
+                </div>
+
+                <!-- User -->
+                <div class="relative">
+                    <button onclick="toggleProfileDD()"
+                        class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl glass-sm hover:bg-white/[0.07] transition-all cursor-pointer">
+                        <div id="user-avatar"
+                            class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-xs font-700 text-white">
+                            U</div>
+                        <span class="text-sm font-500 text-slate-200" id="username-display">User</span>
+                        <svg class="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <div id="profile-dd"
+                        class="hidden absolute right-0 top-full mt-2 w-56 glass rounded-2xl border border-white/[0.09] shadow-2xl shadow-black/60 overflow-hidden z-50">
+                        <div class="p-3 border-b border-white/[0.07]">
+                            <p class="font-600 text-white text-sm" id="dd-username">Username</p>
+                            <p class="text-xs text-slate-500">Alliance University · 2025</p>
+                        </div>
+                        <div class="p-1.5">
+                            <button onclick="showPage('dashboard');toggleProfileDD()"
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-300 hover:bg-white/[0.05] transition-all text-left">📊
+                                Dashboard</button>
+                            <button onclick="showPage('xai');toggleProfileDD()"
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-300 hover:bg-white/[0.05] transition-all text-left">🔬
+                                XAI Viewer</button>
+                            <button onclick="exportPDF()"
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-300 hover:bg-white/[0.05] transition-all text-left">📄
+                                Export PDF Report</button>
+                            <div class="my-1 border-t border-white/[0.06]"></div>
+                            <button onclick="doLogout()"
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-all text-left">🚪
+                                Sign Out</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+            <!-- Mobile nav -->
+            <div class="flex sm:hidden gap-1 p-1 glass rounded-xl mb-5">
+                <button onclick="showPage('detect')" id="mnav-detect"
+                    class="nav-tab active flex-1 py-2 rounded-lg text-xs font-500 border border-transparent transition-all text-indigo-300">🎯
+                    Detect</button>
+                <button onclick="showPage('dashboard')" id="mnav-dashboard"
+                    class="nav-tab flex-1 py-2 rounded-lg text-xs font-500 border border-transparent text-slate-400 transition-all">📊
+                    Dashboard</button>
+                <button onclick="showPage('xai')" id="mnav-xai"
+                    class="nav-tab flex-1 py-2 rounded-lg text-xs font-500 border border-transparent text-slate-400 transition-all">🔬
+                    XAI</button>
+            </div>
+
+            <!-- ══════════════ PAGE: DETECT ══════════════ -->
+            <div id="page-detect" class="page active">
+
+                <!-- Hero -->
+                <div class="text-center mb-7 animate-fade-up">
+                    <div
+                        class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-500 mb-4">
+                        <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                        Real-Time · 7 Emotions · GradCAM Live
+                    </div>
+                    <h1 class="font-outfit font-800 text-3xl sm:text-4xl tracking-tight mb-2 leading-tight">
+                        <span class="grad">Facial Affect Recognition</span>
+                    </h1>
+                    <p class="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
+                        EfficientNetV2-S trained on FER2013 with live GradCAM explanation — Alliance University Capstone
+                        2025
+                    </p>
+                </div>
+
+                <!-- Mode Switcher -->
+                <div class="flex justify-center mb-5">
+                    <div class="flex p-1 glass rounded-2xl gap-1">
+                        <button onclick="switchMode('webcam',this)"
+                            class="mode-tab active px-5 py-2 rounded-xl text-sm font-500 border border-transparent transition-all flex items-center gap-2">📷
+                            Live Webcam</button>
+                        <button onclick="switchMode('upload',this)"
+                            class="mode-tab px-5 py-2 rounded-xl text-sm font-500 border border-transparent text-slate-400 hover:text-slate-200 transition-all flex items-center gap-2">🖼
+                            Upload Image</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-[1fr_390px] gap-5">
+
+                    <!-- LEFT: Video / Upload -->
+                    <div class="glass rounded-2xl overflow-hidden flex flex-col">
+                        <div
+                            class="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.07] flex-shrink-0">
+                            <div class="flex items-center gap-2.5">
+                                <span id="panel-icon" class="text-base">📷</span>
+                                <span id="panel-title" class="font-outfit font-600 text-sm text-slate-200">Live
+                                    Detection</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div id="live-badge"
+                                    class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-500">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"
+                                        style="animation:pulseDot 2s infinite"></span>LIVE
+                                </div>
+                                <div id="face-badge"
+                                    class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 text-xs font-500">
+                                    👤 <span id="face-count-num">0</span>
+                                </div>
+                                <div id="fps-badge"
+                                    class="hidden px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/[0.07] text-slate-500 font-mono text-xs">
+                                    -- FPS</div>
+                            </div>
+                        </div>
+
+                        <!-- WEBCAM -->
+                        <div id="webcam-section" class="flex flex-col flex-1">
+                            <div class="relative bg-black flex-1" style="min-height:380px;">
+                                <div id="cam-placeholder"
+                                    class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-700">
+                                    <div
+                                        class="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center text-3xl animate-float">
+                                        📷</div>
+                                    <p class="text-sm">Click <span class="text-indigo-400 font-500">Start Camera</span>
+                                        to begin</p>
+                                    <p class="text-xs text-slate-700">Allow browser camera access when prompted</p>
+                                </div>
+                                <video id="video" class="w-full hidden" autoplay playsinline muted
+                                    style="transform:scaleX(-1)"></video>
+                                <canvas id="canvas" class="hidden"></canvas>
+                                <canvas id="processed-canvas" class="w-full hidden"></canvas>
+                                <div id="scan-line" class="scan-line hidden"></div>
+                            </div>
+                            <div class="flex gap-3 p-4 border-t border-white/[0.07] flex-shrink-0">
+                                <button id="start-btn" onclick="startCamera()"
+                                    class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500/12 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 text-sm font-500 transition-all">▶
+                                    Start Camera</button>
+                                <button id="stop-btn" onclick="stopCamera()"
+                                    class="hidden flex-1 items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/18 border border-red-500/20 text-red-400 text-sm font-500 transition-all">⏹
+                                    Stop</button>
+                            </div>
+                        </div>
+
+                        <!-- UPLOAD -->
+                        <div id="upload-section" class="hidden flex flex-col flex-1 p-5">
+                            <div id="upload-zone" class="drop-zone rounded-2xl p-10 text-center"
+                                onclick="document.getElementById('file-input').click()"
+                                ondragover="handleDragOver(event)" ondrop="handleDrop(event)"
+                                ondragleave="this.classList.remove('drag-over')">
+                                <input id="file-input" type="file" accept="image/*" class="hidden"
+                                    onchange="handleFileSelect(event)" />
+                                <div class="text-4xl mb-3 opacity-30">📁</div>
+                                <p class="text-sm text-slate-400"><span class="text-indigo-400 font-500">Click to
+                                        upload</span> or drag & drop</p>
+                                <p class="text-xs text-slate-600 mt-1">JPG · PNG · WEBP · Must contain a human face</p>
+                            </div>
+                            <div id="preview-wrap" class="hidden mt-4 relative">
+                                <img id="preview-image"
+                                    class="w-full max-h-64 object-contain rounded-2xl bg-black/30 border border-white/[0.06]" />
+                                <button onclick="clearImage()"
+                                    class="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 text-white text-xs flex items-center justify-center hover:bg-red-500/70 transition-all">✕</button>
+                            </div>
+                            <div id="no-face-error"
+                                class="hidden mt-3 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+                                <span class="text-lg flex-shrink-0">⚠️</span>
+                                <span>No human face detected. Please upload a clear, well-lit, front-facing photo with a
+                                    visible face.</span>
+                            </div>
+                            <button id="analyze-btn" onclick="analyzeImage()"
+                                class="hidden mt-4 w-full py-3 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/22 border border-indigo-500/25 text-indigo-300 font-600 text-sm transition-all flex items-center justify-center gap-2">
+                                🔍 Analyze Emotion
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Results -->
+                    <div class="flex flex-col gap-4">
+
+                        <!-- Emotion Card -->
+                        <div id="emotion-card" class="glass rounded-2xl p-5 text-center relative overflow-hidden">
+                            <div id="emotion-glow"
+                                class="absolute inset-0 opacity-0 transition-all duration-500 pointer-events-none">
+                            </div>
+                            <div id="results-placeholder" class="py-8 flex flex-col items-center gap-2 text-slate-700">
+                                <div class="text-5xl opacity-25 animate-float">🙂</div>
+                                <p class="text-sm mt-1">Emotion will appear here</p>
+                            </div>
+                            <div id="results-content" class="hidden relative z-10">
+                                <div id="result-emoji" class="text-6xl mb-2 inline-block">😊</div>
+                                <div id="result-label" class="font-outfit font-800 text-2xl tracking-tight mb-1">Happy
+                                </div>
+                                <div class="text-slate-500 text-sm mb-4" id="result-conf-text">Confidence: --</div>
+                                <div class="w-full bg-white/[0.05] rounded-full h-2 overflow-hidden mb-1">
+                                    <div id="confidence-bar" class="conf-bar h-2 rounded-full" style="width:0%"></div>
+                                </div>
+                                <div class="flex justify-between text-xs text-slate-600 font-mono">
+                                    <span>0%</span><span id="conf-pct">0%</span><span>100%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prob Bars -->
+                        <div class="glass rounded-2xl p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-700 text-slate-500 uppercase tracking-widest">All Emotion
+                                    Scores</span>
+                                <span class="text-xs font-mono text-slate-700">7 classes</span>
+                            </div>
+                            <div id="prob-bars">
+                                <div class="flex flex-col items-center gap-1 py-5 text-slate-700">
+                                    <span class="text-2xl opacity-40">📊</span>
+                                    <span class="text-xs mt-1">Scores will appear here</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live GradCAM -->
+                        <div class="glass rounded-2xl p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-700 text-slate-500 uppercase tracking-widest">🔥 Live
+                                    GradCAM</span>
+                                <span class="text-xs text-slate-600 font-mono">last block</span>
+                            </div>
+                            <div id="gradcam-live-wrap"
+                                class="rounded-xl overflow-hidden bg-black/30 border border-white/[0.06] min-h-32 flex items-center justify-center xai-img-wrap">
+                                <div id="gradcam-live-ph" class="text-slate-700 text-xs text-center py-6 px-3">
+                                    <div class="text-2xl opacity-30 mb-2">🔥</div>
+                                    GradCAM will appear<br />after first prediction
+                                </div>
+                                <img id="gradcam-live-img" class="hidden w-full" alt="Live GradCAM" />
+                            </div>
+                            <div class="mt-2 flex items-center gap-2">
+                                <span class="text-xs text-slate-700">Low</span>
+                                <div class="flex-1 h-1.5 rounded-full"
+                                    style="background:linear-gradient(90deg,#00f,#0f0,#ff0,#f00)"></div>
+                                <span class="text-xs text-slate-700">High</span>
+                            </div>
+                        </div>
+
+
+                        <!-- Live LIME -->
+                        <div class="glass rounded-2xl p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-700 text-slate-500 uppercase tracking-widest">🟩 LIME
+                                    Explanation</span>
+                                <button id="lime-gen-btn" onclick="generateLIME()"
+                                    class="hidden px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-500 hover:bg-emerald-500/20 transition-all">Generate</button>
+                            </div>
+                            <div id="lime-live-wrap"
+                                class="rounded-xl overflow-hidden bg-black/30 border border-white/[0.06] min-h-32 flex items-center justify-center xai-img-wrap">
+                                <div id="lime-live-ph" class="text-slate-700 text-xs text-center py-6 px-3">
+                                    <div class="text-2xl opacity-30 mb-2">🟩</div>
+                                    Make a prediction first,<br />then click Generate
+                                </div>
+                                <img id="lime-live-img" class="hidden w-full" alt="Live LIME" />
+                            </div>
+                        </div>
+
+                        <!-- Live SHAP -->
+                        <div class="glass rounded-2xl p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-700 text-slate-500 uppercase tracking-widest">🌊 SHAP
+                                    Explanation</span>
+                                <button id="shap-gen-btn" onclick="generateSHAP()"
+                                    class="hidden px-3 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-500 hover:bg-cyan-500/20 transition-all">Generate</button>
+                            </div>
+                            <div id="shap-live-wrap"
+                                class="rounded-xl overflow-hidden bg-black/30 border border-white/[0.06] min-h-32 flex items-center justify-center xai-img-wrap">
+                                <div id="shap-live-ph" class="text-slate-700 text-xs text-center py-6 px-3">
+                                    <div class="text-2xl opacity-30 mb-2">🌊</div>
+                                    Make a prediction first,<br />then click Generate
+                                </div>
+                                <img id="shap-live-img" class="hidden w-full" alt="Live SHAP" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ══════════════ PAGE: DASHBOARD ══════════════ -->
+            <div id="page-dashboard" class="page">
+                <div class="mb-6 flex items-center justify-between">
+                    <div>
+                        <h2 class="font-outfit font-700 text-2xl grad">Your Dashboard</h2>
+                        <p class="text-slate-500 text-sm mt-1">All your emotion prediction history & analytics</p>
+                    </div>
+                    <button onclick="exportPDF()"
+                        class="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/22 border border-indigo-500/25 text-indigo-300 text-sm font-500 transition-all">
+                        📄 Export PDF
+                    </button>
+                </div>
+
+                <!-- Stats row -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="glass rounded-2xl p-4 text-center">
+                        <div class="font-outfit font-700 text-3xl text-indigo-400" id="db-total">--</div>
+                        <div class="text-xs text-slate-600 mt-1">Total Predictions</div>
+                    </div>
+                    <div class="glass rounded-2xl p-4 text-center">
+                        <div class="font-outfit font-700 text-3xl text-cyan-400" id="db-top-emoji">--</div>
+                        <div class="text-xs text-slate-600 mt-1" id="db-top-label">Top Emotion</div>
+                    </div>
+                    <div class="glass rounded-2xl p-4 text-center">
+                        <div class="font-outfit font-700 text-3xl text-emerald-400" id="db-webcam">--</div>
+                        <div class="text-xs text-slate-600 mt-1">Webcam Scans</div>
+                    </div>
+                    <div class="glass rounded-2xl p-4 text-center">
+                        <div class="font-outfit font-700 text-3xl text-amber-400" id="db-upload">--</div>
+                        <div class="text-xs text-slate-600 mt-1">Image Uploads</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-5">
+                    <!-- Emotion Distribution Doughnut -->
+                    <div class="glass rounded-2xl p-5">
+                        <div class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-4">Emotion Distribution
+                        </div>
+                        <div class="relative" style="height:220px">
+                            <canvas id="donut-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Timeline Line Chart -->
+                    <div class="glass rounded-2xl p-5">
+                        <div class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-4">Confidence Timeline
+                            (Last 20)</div>
+                        <div class="relative" style="height:220px">
+                            <canvas id="timeline-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Avg Confidence Bar Chart -->
+                <div class="glass rounded-2xl p-5 mb-5">
+                    <div class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-4">Average Confidence per
+                        Emotion</div>
+                    <div class="relative" style="height:180px">
+                        <canvas id="avgconf-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Recent history table -->
+                <div class="glass rounded-2xl overflow-hidden">
+                    <div class="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between">
+                        <span class="text-xs font-700 text-slate-500 uppercase tracking-widest">Recent
+                            Predictions</span>
+                        <span class="text-xs text-slate-600" id="db-recent-count">Last 10</span>
+                    </div>
+                    <div id="history-table" class="overflow-x-auto">
+                        <div class="flex items-center justify-center py-12 text-slate-700">
+                            <span class="text-sm">Loading history...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ══════════════ PAGE: XAI ══════════════ -->
+            <div id="page-xai" class="page">
+                <div class="mb-6">
+                    <h2 class="font-outfit font-700 text-2xl grad">Explainable AI</h2>
+                    <p class="text-slate-500 text-sm mt-1">Model interpretability — GradCAM, LIME, SHAP</p>
+                </div>
+
+                <!-- XAI Tabs -->
+                <div class="flex gap-2 mb-5 overflow-x-auto pb-1">
+                    <button onclick="switchXAI('gradcam')" id="xai-gradcam"
+                        class="xai-tab active flex items-center gap-2 px-4 py-2 rounded-xl border border-white/[0.07] text-sm font-500 transition-all whitespace-nowrap text-indigo-300">🔥
+                        GradCAM</button>
+                    <button onclick="switchXAI('lime')" id="xai-lime"
+                        class="xai-tab flex items-center gap-2 px-4 py-2 rounded-xl border border-white/[0.07] text-sm font-500 text-slate-400 hover:text-slate-200 transition-all whitespace-nowrap">🟩
+                        LIME</button>
+                    <button onclick="switchXAI('shap')" id="xai-shap"
+                        class="xai-tab flex items-center gap-2 px-4 py-2 rounded-xl border border-white/[0.07] text-sm font-500 text-slate-400 hover:text-slate-200 transition-all whitespace-nowrap">🌊
+                        SHAP</button>
+                    <button onclick="switchXAI('comparison')" id="xai-comparison"
+                        class="xai-tab flex items-center gap-2 px-4 py-2 rounded-xl border border-white/[0.07] text-sm font-500 text-slate-400 hover:text-slate-200 transition-all whitespace-nowrap">📈
+                        Model Comparison</button>
+                </div>
+
+                <div class="glass rounded-2xl p-6">
+
+                    <!-- GradCAM Panel -->
+                    <div id="panel-gradcam" class="xai-panel">
+                        <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+                            <div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="font-600 text-sm text-slate-300">Gradient-Weighted Class Activation Map
+                                    </h3>
+                                    <code
+                                        class="text-xs text-slate-600 bg-white/[0.03] px-2 py-0.5 rounded font-mono">blocks[-1]</code>
+                                </div>
+                                <div
+                                    class="rounded-2xl overflow-hidden bg-black/30 border border-white/[0.07] min-h-48 flex items-center justify-center xai-img-wrap">
+                                    <img id="gradcam-img" src="" alt="GradCAM" class="hidden w-full" />
+                                    <div id="gradcam-ph"
+                                        class="flex flex-col items-center gap-3 py-12 text-slate-700 px-6 text-center">
+                                        <div class="text-4xl opacity-30">🔥</div>
+                                        <p class="text-sm">GradCAM auto-generates on each prediction</p>
+                                        <p class="text-xs text-slate-700 max-w-xs">Make a prediction in the Detect tab —
+                                            the live GradCAM will appear here, or place <code
+                                                class="font-mono">gradcam.png</code> in <code
+                                                class="font-mono">static/img/</code></p>
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <span class="text-xs text-slate-700">Low</span>
+                                            <div class="w-28 h-2.5 rounded-full"
+                                                style="background:linear-gradient(90deg,#00f,#0f0,#ff0,#f00)"></div>
+                                            <span class="text-xs text-slate-700">High</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Show last live gradcam here too -->
+                                <!-- <div id="gradcam-live-copy-wrap"
+                                    class="hidden mt-3 rounded-2xl overflow-hidden border border-indigo-500/20 xai-img-wrap">
+                                    <div class="px-3 py-2 bg-indigo-500/10 text-xs text-indigo-300 font-500">⚡ Last Live
+                                        Prediction GradCAM</div>
+                                    <img id="gradcam-live-copy" class="w-full" alt="Live GradCAM" />
+                                </div> -->
+                            </div>
+                            <div class="flex flex-col gap-4">
+                                <div class="bg-white/[0.03] rounded-2xl p-4 border border-white/[0.06]">
+                                    <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-3">How
+                                        GradCAM Works</p>
+                                    <div class="space-y-2.5 text-xs text-slate-500 leading-relaxed">
+                                        <div class="flex gap-2.5"><span
+                                                class="text-indigo-400 font-700 shrink-0">01</span><span>Computes
+                                                gradients of the predicted class score w.r.t. last conv feature
+                                                map</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-indigo-400 font-700 shrink-0">02</span><span>Weights each
+                                                channel by its global average gradient</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-indigo-400 font-700 shrink-0">03</span><span>Applies ReLU —
+                                                only positive contributions highlighted</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-indigo-400 font-700 shrink-0">04</span><span><span
+                                                    class="text-red-400">Red = high activation</span>, overlaid on
+                                                original face</span></div>
+                                    </div>
+                                </div>
+                                <div class="bg-white/[0.03] rounded-2xl p-4 border border-white/[0.06]">
+                                    <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-3">Key
+                                        Regions</p>
+                                    <div class="space-y-2">
+                                        <div class="flex items-center justify-between text-xs"><span
+                                                class="text-slate-400">👁 Eye region</span>
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-20 h-1.5 bg-white/[0.05] rounded-full">
+                                                    <div class="h-full bg-red-400 rounded-full" style="width:85%"></div>
+                                                </div><span class="font-mono text-slate-600">85%</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs"><span
+                                                class="text-slate-400">👄 Mouth corners</span>
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-20 h-1.5 bg-white/[0.05] rounded-full">
+                                                    <div class="h-full bg-orange-400 rounded-full" style="width:72%">
+                                                    </div>
+                                                </div><span class="font-mono text-slate-600">72%</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs"><span
+                                                class="text-slate-400">🤨 Eyebrows</span>
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-20 h-1.5 bg-white/[0.05] rounded-full">
+                                                    <div class="h-full bg-yellow-400 rounded-full" style="width:58%">
+                                                    </div>
+                                                </div><span class="font-mono text-slate-600">58%</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs"><span
+                                                class="text-slate-400">👃 Nose bridge</span>
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-20 h-1.5 bg-white/[0.05] rounded-full">
+                                                    <div class="h-full bg-blue-400 rounded-full" style="width:30%">
+                                                    </div>
+                                                </div><span class="font-mono text-slate-600">30%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- LIME Panel -->
+                    <div id="panel-lime" class="xai-panel hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+                            <div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="font-600 text-sm text-slate-300">Local Interpretable Model-Agnostic
+                                        Explanations</h3>
+                                    <code
+                                        class="text-xs text-slate-600 bg-white/[0.03] px-2 py-0.5 rounded font-mono">n_segments=80</code>
+                                </div>
+                                <div
+                                    class="rounded-2xl overflow-hidden bg-black/30 border border-white/[0.07] min-h-48 flex items-center justify-center xai-img-wrap">
+                                    <img id="lime-img" src="" alt="LIME" class="hidden w-full" />
+                                    <div id="lime-ph"
+                                        class="flex flex-col items-center gap-3 py-12 text-slate-700 px-6 text-center">
+                                        <div class="text-4xl opacity-30">🟩</div>
+                                        <p class="text-sm">LIME superpixel map</p>
+                                        <p class="text-xs text-slate-700 max-w-xs">Place <code
+                                                class="font-mono">lime.png</code> in <code
+                                                class="font-mono">static/img/</code> — auto-loads on page open</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-4">
+                                <div class="bg-white/[0.03] rounded-2xl p-4 border border-white/[0.06]">
+                                    <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-3">How LIME
+                                        Works</p>
+                                    <div class="space-y-2.5 text-xs text-slate-500 leading-relaxed">
+                                        <div class="flex gap-2.5"><span
+                                                class="text-emerald-400 font-700 shrink-0">01</span><span>Segments image
+                                                into superpixels via SLIC</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-emerald-400 font-700 shrink-0">02</span><span>Generates 1000
+                                                perturbed samples by masking superpixels</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-emerald-400 font-700 shrink-0">03</span><span>Fits a local
+                                                linear model to approximate the neural network</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-emerald-400 font-700 shrink-0">04</span><span><span
+                                                    class="text-green-400">Green</span> supports, <span
+                                                    class="text-red-400">Red</span> contradicts prediction</span></div>
+                                    </div>
+                                </div>
+                                <div class="bg-white/[0.03] rounded-2xl p-4 border border-white/[0.06]">
+                                    <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-3">Legend</p>
+                                    <div class="space-y-2">
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <div class="w-4 h-4 rounded-md bg-green-500/80 flex-shrink-0"></div><span
+                                                class="text-slate-400">Supporting — pushes toward predicted class</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <div class="w-4 h-4 rounded-md bg-red-500/80 flex-shrink-0"></div><span
+                                                class="text-slate-400">Contradicting — pushes against prediction</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <div
+                                                class="w-4 h-4 rounded-md bg-slate-800 border border-white/10 flex-shrink-0">
+                                            </div><span class="text-slate-400">Masked superpixels (neutral)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SHAP Panel -->
+                    <div id="panel-shap" class="xai-panel hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+                            <div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="font-600 text-sm text-slate-300">SHAP Values — Per-Emotion Attribution
+                                        Grid</h3>
+                                    <code
+                                        class="text-xs text-slate-600 bg-white/[0.03] px-2 py-0.5 rounded font-mono">GradientExplainer</code>
+                                </div>
+                                <div
+                                    class="rounded-2xl overflow-hidden bg-black/30 border border-white/[0.07] min-h-48 flex items-center justify-center xai-img-wrap">
+                                    <img id="shap-img" src="" alt="SHAP" class="hidden w-full" />
+                                    <div id="shap-ph"
+                                        class="flex flex-col items-center gap-3 py-12 text-slate-700 px-6 text-center">
+                                        <div class="text-4xl opacity-30">🌊</div>
+                                        <p class="text-sm">SHAP attribution grid</p>
+                                        <p class="text-xs text-slate-700 max-w-xs">Place <code
+                                                class="font-mono">shap.png</code> in <code
+                                                class="font-mono">static/img/</code></p>
+                                        <div class="flex items-center gap-4 mt-2">
+                                            <div class="flex items-center gap-1.5 text-xs text-slate-700">
+                                                <div class="w-3 h-3 rounded-sm bg-red-500"></div>Positive
+                                            </div>
+                                            <div class="flex items-center gap-1.5 text-xs text-slate-700">
+                                                <div class="w-3 h-3 rounded-sm bg-blue-500"></div>Negative
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-4">
+                                <div class="bg-white/[0.03] rounded-2xl p-4 border border-white/[0.06]">
+                                    <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-3">How SHAP
+                                        Works</p>
+                                    <div class="space-y-2.5 text-xs text-slate-500 leading-relaxed">
+                                        <div class="flex gap-2.5"><span
+                                                class="text-cyan-400 font-700 shrink-0">01</span><span>Shapley values
+                                                from cooperative game theory</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-cyan-400 font-700 shrink-0">02</span><span>Each pixel gets a
+                                                contribution score per emotion</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-cyan-400 font-700 shrink-0">03</span><span>GradientExplainer
+                                                with inplace SiLU fix applied</span></div>
+                                        <div class="flex gap-2.5"><span
+                                                class="text-cyan-400 font-700 shrink-0">04</span><span>7 heatmaps — one
+                                                per emotion class</span></div>
+                                    </div>
+                                </div>
+                                <div class="bg-white/[0.03] rounded-2xl p-4 border border-white/[0.06]">
+                                    <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-2">Output
+                                        Shape</p>
+                                    <code
+                                        class="text-xs text-cyan-400 block font-mono leading-relaxed bg-black/30 px-3 py-2.5 rounded-xl">shap_vals: (N,C,H,W,classes)<br/>= (7, 3, 224, 224, 7)</code>
+                                    <p class="text-xs text-slate-600 mt-2">Bug fixed: <code
+                                            class="font-mono">inplace=False</code> for SiLU</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Panel -->
+                    <div id="panel-comparison" class="xai-panel hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <div class="bg-black/20 rounded-2xl p-5 border border-white/[0.06]">
+                                <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-4">Accuracy on
+                                    FER2013</p>
+                                <div class="space-y-3">
+                                    <div>
+                                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-500">CNN
+                                                (Baseline)</span><span class="font-mono text-slate-500">54.42%</span>
+                                        </div>
+                                        <div class="w-full bg-white/[0.04] rounded-full h-2">
+                                            <div class="h-full rounded-full bg-slate-700" style="width:54.42%"></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-xs mb-1"><span
+                                                class="text-slate-500">ViT</span><span
+                                                class="font-mono text-slate-500">66.15%</span></div>
+                                        <div class="w-full bg-white/[0.04] rounded-full h-2">
+                                            <div class="h-full rounded-full bg-slate-600" style="width:66.15%"></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-xs mb-1"><span
+                                                class="text-slate-500">CNN-ViT Hybrid</span><span
+                                                class="font-mono text-slate-500">66.63%</span></div>
+                                        <div class="w-full bg-white/[0.04] rounded-full h-2">
+                                            <div class="h-full rounded-full bg-slate-500" style="width:66.63%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="pt-1 border-t border-white/[0.06]">
+                                        <div class="flex justify-between text-xs mb-1"><span
+                                                class="text-indigo-400 font-600">EfficientNetV2-S (Ours)</span><span
+                                                class="font-mono text-indigo-400">72.95%</span></div>
+                                        <div class="w-full bg-white/[0.04] rounded-full h-2.5">
+                                            <div class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-500"
+                                                style="width:72.95%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-black/20 rounded-2xl p-5 border border-white/[0.06]">
+                                <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-4">Why Our
+                                    Approach</p>
+                                <div class="space-y-3">
+                                    <div
+                                        class="flex gap-3 p-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                        <span class="text-emerald-400 mt-0.5 shrink-0">✓</span>
+                                        <div>
+                                            <p class="text-xs font-600 text-slate-300">GradCAM + LIME + SHAP</p>
+                                            <p class="text-xs text-slate-600 mt-0.5">Only model with full 3-method XAI
+                                                pipeline</p>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="flex gap-3 p-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                        <span class="text-emerald-400 mt-0.5 shrink-0">✓</span>
+                                        <div>
+                                            <p class="text-xs font-600 text-slate-300">MixUp + CutMix Augmentation</p>
+                                            <p class="text-xs text-slate-600 mt-0.5">Advanced training regularization
+                                                (α=0.4)</p>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="flex gap-3 p-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                        <span class="text-emerald-400 mt-0.5 shrink-0">✓</span>
+                                        <div>
+                                            <p class="text-xs font-600 text-slate-300">5-View TTA Ensemble</p>
+                                            <p class="text-xs text-slate-600 mt-0.5">Improved robustness at inference
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="flex gap-3 p-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                        <span class="text-emerald-400 mt-0.5 shrink-0">✓</span>
+                                        <div>
+                                            <p class="text-xs font-600 text-slate-300">Live GradCAM on every prediction
+                                            </p>
+                                            <p class="text-xs text-slate-600 mt-0.5">Real-time explainability in
+                                                production</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-xs font-700 text-slate-500 uppercase tracking-widest mb-3">Evaluation Outputs
+                            </p>
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                <div
+                                    class="bg-black/30 rounded-2xl border border-white/[0.06] p-3 text-center overflow-hidden xai-img-wrap">
+                                    <img id="confmat-img" class="hidden w-full rounded-xl mb-2" />
+                                    <div id="confmat-ph" class="py-5">
+                                        <div class="text-2xl opacity-25 mb-1">📊</div>
+                                        <p class="text-xs text-slate-600">confusion_matrix.png</p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="bg-black/30 rounded-2xl border border-white/[0.06] p-3 text-center overflow-hidden xai-img-wrap">
+                                    <img id="perclass-img" class="hidden w-full rounded-xl mb-2" />
+                                    <div id="perclass-ph" class="py-5">
+                                        <div class="text-2xl opacity-25 mb-1">📈</div>
+                                        <p class="text-xs text-slate-600">per_class_accuracy.png</p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="bg-black/30 rounded-2xl border border-white/[0.06] p-3 text-center overflow-hidden xai-img-wrap">
+                                    <img id="modelcomp-img" class="hidden w-full rounded-xl mb-2" />
+                                    <div id="modelcomp-ph" class="py-5">
+                                        <div class="text-2xl opacity-25 mb-1">🔬</div>
+                                        <p class="text-xs text-slate-600">model_comparison.png</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div
+                class="mt-8 pt-5 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
+                <span><span class="grad font-600">EmotionAI</span> · Alliance University Capstone 2025</span>
+                <div class="flex items-center gap-4">
+                    <span>Pavana · Likhitha · Ankita · Nithya</span>
+                    <span class="flex items-center gap-1.5"><span
+                            class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>PyTorch 2.0 · timm</span>
+                </div>
+            </div>
+
+        </main>
+    </div><!-- end main-app -->
+
+    <!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════════════════ -->
+    <script>
+        const EC = { Angry: '#ef4444', Disgust: '#a16207', Fear: '#9B59B6', Happy: '#22c55e', Neutral: '#94a3b8', Sad: '#3b82f6', Surprise: '#f59e0b' };
+        const EE = { Angry: '😠', Disgust: '🤢', Fear: '😨', Happy: '😊', Neutral: '😐', Sad: '😢', Surprise: '😲' };
+        const EMOTION_ORDER = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'];
+
+        let stream = null, animFrame = null, isRunning = false, selectedFile = null;
+        let lastFpsTime = Date.now(), fpsCounter = 0, lastSendTime = 0;
+        const SEND_INTERVAL = 150;
+        let wallMode = 'login';
+        let currentUser = null;
+        let lastGradcam = null;
+
+        // Charts
+        let donutChart = null, timelineChart = null, avgconfChart = null;
+
+        // ── Auth Wall ────────────────────────────────────────────────
+        function wallTab(mode) {
+            wallMode = mode;
+            const isLogin = mode === 'login';
+            document.getElementById('wall-login-tab').className = `flex-1 py-2 rounded-xl text-sm font-500 transition-all ${isLogin ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`;
+            document.getElementById('wall-register-tab').className = `flex-1 py-2 rounded-xl text-sm font-500 transition-all ${!isLogin ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`;
+            document.getElementById('wall-confirm-wrap').classList.toggle('hidden', isLogin);
+            document.getElementById('wall-submit').textContent = isLogin ? 'Sign In' : 'Create Account';
+            document.getElementById('wall-toggle-text').textContent = isLogin ? "Don't have an account?" : 'Already have an account?';
+            document.getElementById('wall-toggle-link').textContent = isLogin ? 'Sign Up' : 'Sign In';
+            document.getElementById('wall-error').classList.add('hidden');
+            document.getElementById('wall-success').classList.add('hidden');
+        }
+
+        async function wallSubmit() {
+            const un = document.getElementById('wall-username').value.trim();
+            const pw = document.getElementById('wall-password').value.trim();
+            const cf = document.getElementById('wall-confirm').value.trim();
+            const err = document.getElementById('wall-error');
+            const suc = document.getElementById('wall-success');
+
+            err.classList.add('hidden'); suc.classList.add('hidden');
+
+            if (!un || !pw) { err.textContent = 'Please fill in all fields'; err.classList.remove('hidden'); err.classList.add('flex'); return; }
+            if (wallMode === 'register') {
+                if (pw.length < 6) { err.textContent = 'Password must be at least 6 characters'; err.classList.remove('hidden'); err.classList.add('flex'); return; }
+                if (pw !== cf) { err.textContent = 'Passwords do not match'; err.classList.remove('hidden'); err.classList.add('flex'); return; }
+            }
+
+            const btn = document.getElementById('wall-submit');
+            btn.textContent = 'Please wait...'; btn.disabled = true;
+
+            try {
+                const url = wallMode === 'login' ? '/login' : '/register';
+                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: un, password: pw }) });
+                const d = await res.json();
+                if (d.success) {
+                    if (wallMode === 'register') {
+                        suc.textContent = 'Account created! Signing you in...'; suc.classList.remove('hidden'); suc.classList.add('flex');
+                        setTimeout(() => { wallMode = 'login'; wallSubmit(); }, 1000);
+                    } else {
+                        currentUser = un;
+                        enterApp(un);
+                    }
+                } else {
+                    err.textContent = d.error || 'Something went wrong'; err.classList.remove('hidden'); err.classList.add('flex');
+                }
+            } catch (e) {
+                err.textContent = 'Connection error. Please try again.'; err.classList.remove('hidden'); err.classList.add('flex');
+            }
+            btn.textContent = wallMode === 'login' ? 'Sign In' : 'Create Account'; btn.disabled = false;
+        }
+
+        function enterApp(username) {
+            document.getElementById('auth-wall').classList.add('hidden');
+            document.getElementById('main-app').classList.add('visible');
+            document.getElementById('username-display').textContent = username;
+            document.getElementById('dd-username').textContent = username;
+            const ini = username[0].toUpperCase();
+            document.getElementById('user-avatar').textContent = ini;
+            // Load XAI static images
+            tryLoadImg('gradcam-img', 'gradcam-ph', '/static/img/gradcam.png');
+            tryLoadImg('lime-img', 'lime-ph', '/static/img/lime.png');
+            tryLoadImg('shap-img', 'shap-ph', '/static/img/shap.png');
+            tryLoadImg('confmat-img', 'confmat-ph', '/static/img/confusion_matrix.png');
+            tryLoadImg('perclass-img', 'perclass-ph', '/static/img/per_class_accuracy.png');
+            tryLoadImg('modelcomp-img', 'modelcomp-ph', '/static/img/model_comparison.png');
+        }
+
+        document.getElementById('wall-password').addEventListener('keyup', e => { if (e.key === 'Enter') wallSubmit(); });
+        document.getElementById('wall-username').addEventListener('keyup', e => { if (e.key === 'Enter') document.getElementById('wall-password').focus(); });
+
+        // Check if already logged in (server-side session)
+        (async () => {
+            try {
+                const r = await fetch('/dashboard');
+                if (r.ok) {
+                    const d = await r.json();
+                    // Derive username from session — we'll use a dedicated endpoint
+                }
+            } catch (e) { }
+            // Try a lightweight check
+            try {
+                const r = await fetch('/health');
+                // Always show auth wall on load; session handled by server
+                // If logged in, server won't 401 on /dashboard
+                const test = await fetch('/dashboard');
+                if (test.status === 200) {
+                    const txt = await test.text();
+                    // Get username from a session check
+                    const sr = await fetch('/session_user');
+                    if (sr.ok) { const sd = await sr.json(); if (sd.username) { currentUser = sd.username; enterApp(sd.username); } }
+                }
+            } catch (e) { }
+        })();
+
+        // ── Page navigation ──────────────────────────────────────────
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-' + page).classList.add('active');
+            document.querySelectorAll('.nav-tab').forEach(t => {
+                t.classList.remove('active', 'text-indigo-300');
+                t.classList.add('text-slate-400');
+            });
+            ['nav-' + page, 'mnav-' + page].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.classList.add('active', 'text-indigo-300'); el.classList.remove('text-slate-400'); }
+            });
+            if (page === 'dashboard') loadDashboard();
+        }
+
+        // ── Mode switch ──────────────────────────────────────────────
+        function switchMode(mode, btn) {
+            document.querySelectorAll('.mode-tab').forEach(t => { t.classList.remove('active'); t.classList.add('text-slate-400'); t.classList.remove('text-indigo-300'); });
+            btn.classList.add('active'); btn.classList.remove('text-slate-400'); btn.classList.add('text-indigo-300');
+            const isW = mode === 'webcam';
+            document.getElementById('webcam-section').classList.toggle('hidden', !isW);
+            document.getElementById('upload-section').classList.toggle('hidden', isW);
+            document.getElementById('panel-title').textContent = isW ? 'Live Detection' : 'Image Analysis';
+            document.getElementById('panel-icon').textContent = isW ? '📷' : '🖼';
+            if (!isW) stopCamera();
+        }
+
+        // ── XAI tabs ─────────────────────────────────────────────────
+        function switchXAI(tab) {
+            document.querySelectorAll('.xai-tab').forEach(t => { t.classList.remove('active'); t.classList.add('text-slate-400'); t.classList.remove('text-indigo-300'); });
+            document.querySelectorAll('.xai-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById('xai-' + tab).classList.add('active', 'text-indigo-300');
+            document.getElementById('xai-' + tab).classList.remove('text-slate-400');
+            document.getElementById('panel-' + tab).classList.remove('hidden');
+        }
+
+        // ── Camera ───────────────────────────────────────────────────
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+                const v = document.getElementById('video'); v.srcObject = stream; await v.play();
+                document.getElementById('cam-placeholder').classList.add('hidden');
+                v.classList.remove('hidden');
+                document.getElementById('start-btn').classList.add('hidden');
+                document.getElementById('stop-btn').classList.remove('hidden'); document.getElementById('stop-btn').classList.add('flex');
+                document.getElementById('live-badge').classList.remove('hidden'); document.getElementById('live-badge').classList.add('flex');
+                document.getElementById('face-badge').classList.add('flex');
+                document.getElementById('fps-badge').classList.remove('hidden');
+                document.getElementById('scan-line').classList.remove('hidden');
+                isRunning = true; processLoop();
+            } catch (e) { alert('Camera access denied. Please allow camera permissions.'); }
+        }
+
+        function stopCamera() {
+            isRunning = false;
+            if (animFrame) cancelAnimationFrame(animFrame);
+            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+            const v = document.getElementById('video');
+            v.classList.add('hidden');
+            document.getElementById('processed-canvas').classList.add('hidden');
+            document.getElementById('cam-placeholder').classList.remove('hidden');
+            document.getElementById('start-btn').classList.remove('hidden');
+            document.getElementById('stop-btn').classList.add('hidden'); document.getElementById('stop-btn').classList.remove('flex');
+            document.getElementById('live-badge').classList.add('hidden'); document.getElementById('live-badge').classList.remove('flex');
+            document.getElementById('face-badge').classList.remove('flex');
+            document.getElementById('fps-badge').classList.add('hidden');
+            document.getElementById('scan-line').classList.add('hidden');
+        }
+
+        async function processLoop() {
+            if (!isRunning) return;
+            const now = Date.now();
+            if (now - lastSendTime > SEND_INTERVAL) { lastSendTime = now; await captureAndSend(); }
+            fpsCounter++;
+            if (now - lastFpsTime >= 1000) {
+                const f = fpsCounter; fpsCounter = 0; lastFpsTime = now;
+                document.getElementById('fps-badge').textContent = `${f} FPS`;
+            }
+            animFrame = requestAnimationFrame(processLoop);
+        }
+
+        async function captureAndSend() {
+            const v = document.getElementById('video'), c = document.getElementById('canvas');
+            if (!v.videoWidth) return;
+            c.width = v.videoWidth; c.height = v.videoHeight;
+            const ctx = c.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.drawImage(v, -c.width, 0, c.width, c.height); ctx.restore();
+            try {
+                const res = await fetch('/predict_frame', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ frame: c.toDataURL('image/jpeg', 0.8) }) });
+                if (res.status === 401) { stopCamera(); return; }
+                const d = await res.json();
+                const pc = document.getElementById('processed-canvas');
+                pc.classList.remove('hidden'); document.getElementById('video').classList.add('hidden');
+                const img = new Image(); img.onload = () => { pc.width = img.naturalWidth; pc.height = img.naturalHeight; pc.getContext('2d').drawImage(img, 0, 0); }; img.src = d.frame;
+                document.getElementById('face-count-num').textContent = d.count;
+                if (d.results && d.results.length > 0) {
+                    const r = d.results[0];
+                    updateResults({ emotion: r.emotion, confidence: r.confidence, all_probs: r.all_probs, emoji: EE[r.emotion], color: EC[r.emotion] });
+                    if (d.gradcam) updateLiveGradcam(d.gradcam);
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // ── Upload ───────────────────────────────────────────────────
+        function handleDragOver(e) { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+        function handleDrop(e) { e.preventDefault(); document.getElementById('upload-zone').classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f && f.type.startsWith('image/')) loadFile(f); }
+        function handleFileSelect(e) { const f = e.target.files[0]; if (f) loadFile(f); }
+        function loadFile(file) {
+            selectedFile = file; document.getElementById('no-face-error').classList.add('hidden');
+            const r = new FileReader();
+            r.onload = ev => { document.getElementById('preview-image').src = ev.target.result; document.getElementById('preview-wrap').classList.remove('hidden'); document.getElementById('analyze-btn').classList.remove('hidden'); document.getElementById('analyze-btn').classList.add('flex'); };
+            r.readAsDataURL(file);
+        }
+        function clearImage() {
+            selectedFile = null;
+            document.getElementById('preview-wrap').classList.add('hidden');
+            document.getElementById('analyze-btn').classList.add('hidden'); document.getElementById('analyze-btn').classList.remove('flex');
+            document.getElementById('no-face-error').classList.add('hidden');
+            document.getElementById('file-input').value = '';
+        }
+        async function analyzeImage() {
+            if (!selectedFile) return;
+            const btn = document.getElementById('analyze-btn');
+            btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Analyzing...'; btn.disabled = true;
+            document.getElementById('no-face-error').classList.add('hidden');
+            const fd = new FormData(); fd.append('image', selectedFile);
+            try {
+                const res = await fetch('/predict_image', { method: 'POST', body: fd });
+                if (res.status === 401) { window.location.reload(); return; }
+                const d = await res.json();
+                if (d.error === 'no_face') {
+                    document.getElementById('no-face-error').classList.remove('hidden');
+                    document.getElementById('no-face-error').classList.add('flex');
+                } else {
+                    updateResults({ ...d, emoji: EE[d.emotion], color: EC[d.emotion] });
+                    if (d.gradcam) updateLiveGradcam(d.gradcam);
+                }
+            } catch (e) { console.error(e); }
+            btn.innerHTML = '🔍 Analyze Emotion'; btn.disabled = false;
+        }
+
+        // ── Live GradCAM ─────────────────────────────────────────────
+        function updateLiveGradcam(b64) {
+            lastGradcam = b64;
+            const img = document.getElementById('gradcam-live-img');
+            const ph = document.getElementById('gradcam-live-ph');
+            img.src = b64; img.classList.remove('hidden'); ph.classList.add('hidden');
+            const copy = document.getElementById('gradcam-live-copy');
+            const copyWrap = document.getElementById('gradcam-live-copy-wrap');
+            if (copy) { copy.src = b64; copyWrap.classList.remove('hidden'); }
+            // Reveal LIME and SHAP generate buttons
+            document.getElementById('lime-gen-btn').classList.remove('hidden');
+            document.getElementById('shap-gen-btn').classList.remove('hidden');
+        }
+
+        // ── Results ──────────────────────────────────────────────────
+        function updateResults(d) {
+            document.getElementById('results-placeholder').classList.add('hidden');
+            document.getElementById('results-content').classList.remove('hidden');
+            const glow = document.getElementById('emotion-glow');
+            glow.style.background = `radial-gradient(ellipse at 50% 100%, ${d.color}20 0%, transparent 70%)`; glow.style.opacity = '1';
+            const em = document.getElementById('result-emoji'); em.textContent = d.emoji; em.style.animation = 'none'; requestAnimationFrame(() => em.style.animation = 'pop 0.35s ease forwards');
+            document.getElementById('result-label').textContent = d.emotion; document.getElementById('result-label').style.color = d.color;
+            const pct = (d.confidence * 100).toFixed(1);
+            document.getElementById('result-conf-text').textContent = `Confidence: ${pct}%`;
+            document.getElementById('conf-pct').textContent = `${pct}%`;
+            const bar = document.getElementById('confidence-bar'); bar.style.width = `${pct}%`; bar.style.background = d.color;
+            if (d.all_probs) {
+                const sorted = Object.entries(d.all_probs).sort((a, b) => b[1] - a[1]);
+                document.getElementById('prob-bars').innerHTML = sorted.map(([e, p]) => `
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-sm w-7 text-center">${EE[e]}</span>
+        <div class="flex-1 bg-white/[0.04] rounded-full h-1.5 overflow-hidden">
+          <div class="prob-fill h-full rounded-full" style="width:${(p * 100).toFixed(1)}%;background:${EC[e]};opacity:${e === d.emotion ? 1 : 0.4}"></div>
+        </div>
+        <span class="text-xs font-mono w-10 text-right ${e === d.emotion ? 'text-white font-600' : 'text-slate-600'}">${(p * 100).toFixed(1)}%</span>
+      </div>`).join('');
+            }
+        }
+
+        // ── Dashboard ────────────────────────────────────────────────
+        async function loadDashboard() {
+            try {
+                const res = await fetch('/dashboard');
+                if (res.status === 401) { return; }
+                const d = await res.json();
+
+                document.getElementById('db-total').textContent = d.total || 0;
+                const topE = d.counts && Object.keys(d.counts).length ? Object.entries(d.counts).sort((a, b) => b[1] - a[1])[0] : null;
+                if (topE) { document.getElementById('db-top-emoji').textContent = EE[topE[0]] || '--'; document.getElementById('db-top-label').textContent = topE[0]; }
+
+                // Count by source
+                const webcamC = (d.recent || []).filter(p => p.source === 'webcam').length;
+                const uploadC = (d.recent || []).filter(p => p.source === 'upload').length;
+                // These are from recent 10, approximate
+                document.getElementById('db-webcam').textContent = d.counts ? Object.values(d.counts).reduce((a, b) => a + b, 0) - uploadC : 0;
+                document.getElementById('db-upload').textContent = uploadC;
+
+                // Donut chart
+                if (d.counts && Object.keys(d.counts).length) {
+                    const labels = Object.keys(d.counts);
+                    const vals = labels.map(l => d.counts[l]);
+                    const bgColors = labels.map(l => EC[l] || '#666');
+                    if (donutChart) donutChart.destroy();
+                    donutChart = new Chart(document.getElementById('donut-chart'), {
+                        type: 'doughnut',
+                        data: { labels, datasets: [{ data: vals, backgroundColor: bgColors, borderColor: 'rgba(255,255,255,0.05)', borderWidth: 2, hoverOffset: 6 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 11, family: 'Outfit' }, padding: 12, usePointStyle: true } }, tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed} (${(ctx.parsed / d.total * 100).toFixed(1)}%)` } } }, cutout: '65%' }
+                    });
+                }
+
+                // Timeline chart
+                if (d.timeline && d.timeline.length) {
+                    const labels = d.timeline.map((_, i) => i + 1 + '');
+                    const vals = d.timeline.map(p => (p.confidence * 100).toFixed(1));
+                    const bgColors = d.timeline.map(p => EC[p.emotion] || '#818cf8');
+                    if (timelineChart) timelineChart.destroy();
+                    timelineChart = new Chart(document.getElementById('timeline-chart'), {
+                        type: 'line',
+                        data: { labels, datasets: [{ label: 'Confidence %', data: vals, borderColor: '#818cf8', backgroundColor: 'rgba(99,102,241,0.1)', tension: 0.4, fill: true, pointBackgroundColor: bgColors, pointRadius: 5, pointHoverRadius: 7 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (ctx) => { const p = d.timeline[ctx.dataIndex]; return `Emotion: ${p.emotion}\nSource: ${p.source}`; } } } }, scales: { x: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } }, y: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, max: 100 } } }
+                    });
+                }
+
+                // Avg confidence chart
+                if (d.avg_conf && Object.keys(d.avg_conf).length) {
+                    const labels = Object.keys(d.avg_conf);
+                    const vals = labels.map(l => d.avg_conf[l]);
+                    const bgColors = labels.map(l => EC[l] || '#818cf8');
+                    if (avgconfChart) avgconfChart.destroy();
+                    avgconfChart = new Chart(document.getElementById('avgconf-chart'), {
+                        type: 'bar',
+                        data: { labels, datasets: [{ label: 'Avg Confidence %', data: vals, backgroundColor: bgColors.map(c => c + '99'), borderColor: bgColors, borderWidth: 1.5, borderRadius: 6 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#475569', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } }, y: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, max: 100 } } }
+                    });
+                }
+
+                // History table
+                if (d.recent && d.recent.length) {
+                    const rows = d.recent.map((p, i) => `
+        <tr class="border-t border-white/[0.04] hover:bg-white/[0.02] transition-all">
+          <td class="px-5 py-3 text-xs text-slate-600 font-mono">${i + 1}</td>
+          <td class="px-5 py-3"><div class="flex items-center gap-2"><span>${EE[p.emotion] || '?'}</span><span class="text-sm font-500" style="color:${EC[p.emotion] || '#fff'}">${p.emotion}</span></div></td>
+          <td class="px-5 py-3 font-mono text-sm text-slate-300">${(p.confidence * 100).toFixed(1)}%</td>
+          <td class="px-5 py-3"><span class="px-2 py-0.5 rounded-full text-xs ${p.source === 'webcam' ? 'bg-cyan-500/10 text-cyan-400' : 'bg-amber-500/10 text-amber-400'}">${p.source}</span></td>
+          <td class="px-5 py-3 text-xs text-slate-600 font-mono">${p.timestamp}</td>
+        </tr>`).join('');
+                    document.getElementById('history-table').innerHTML = `
+        <table class="w-full text-left">
+          <thead><tr class="text-xs text-slate-600 uppercase tracking-wider">
+            <th class="px-5 py-3">#</th><th class="px-5 py-3">Emotion</th><th class="px-5 py-3">Confidence</th><th class="px-5 py-3">Source</th><th class="px-5 py-3">Time</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+                } else {
+                    document.getElementById('history-table').innerHTML = '<div class="flex items-center justify-center py-12 text-slate-700"><span class="text-sm">No predictions yet — start detecting!</span></div>';
+                }
+            } catch (e) { console.error('Dashboard error', e); }
+        }
+
+        // ── Export PDF ───────────────────────────────────────────────
+        function exportPDF() {
+            window.open('/export/pdf', '_blank');
+        }
+
+        // ── Profile dropdown ─────────────────────────────────────────
+        function toggleProfileDD() {
+            const dd = document.getElementById('profile-dd');
+            dd.classList.toggle('hidden'); dd.classList.toggle('open');
+        }
+        document.addEventListener('click', e => {
+            const nav = document.querySelector('#main-app header .relative');
+            if (nav && !nav.contains(e.target)) {
+                document.getElementById('profile-dd').classList.add('hidden');
+                document.getElementById('profile-dd').classList.remove('open');
+            }
+        });
+
+        // ── Logout ───────────────────────────────────────────────────
+        async function doLogout() {
+            stopCamera();
+            await fetch('/logout', { method: 'POST' });
+            currentUser = null;
+            document.getElementById('main-app').classList.remove('visible');
+            document.getElementById('auth-wall').classList.remove('hidden');
+            document.getElementById('wall-username').value = '';
+            document.getElementById('wall-password').value = '';
+            document.getElementById('wall-confirm').value = '';
+            wallTab('login');
+        }
+
+        // ── XAI image auto-loader ────────────────────────────────────
+        function tryLoadImg(imgId, phId, src) {
+            const img = document.getElementById(imgId), ph = document.getElementById(phId);
+            if (!img) return;
+            const t = new Image();
+            t.onload = () => { img.src = src; img.classList.remove('hidden'); if (ph) ph.classList.add('hidden'); };
+            t.src = src + '?t=' + Date.now();
+        }
+
+        Chart.defaults.color = '#64748b';
+        Chart.defaults.font.family = 'Outfit';
+
+        async function generateLIME() {
+            const btn = document.getElementById('lime-gen-btn');
+            btn.textContent = 'Running... (~20s)'; btn.disabled = true;
+            try {
+                const res = await fetch('/generate_lime', { method: 'POST' });
+                const d = await res.json();
+                if (d.lime) {
+                    const img = document.getElementById('lime-live-img');
+                    const ph = document.getElementById('lime-live-ph');
+                    img.src = d.lime; img.classList.remove('hidden'); ph.classList.add('hidden');
+                } else {
+                    alert(d.error || 'LIME generation failed');
+                }
+            } catch (e) { console.error(e); }
+            btn.textContent = 'Regenerate'; btn.disabled = false;
+        }
+
+        async function generateSHAP() {
+            const btn = document.getElementById('shap-gen-btn');
+            btn.textContent = 'Running... (~10s)'; btn.disabled = true;
+            try {
+                const res = await fetch('/generate_shap', { method: 'POST' });
+                const d = await res.json();
+                if (d.shap) {
+                    const img = document.getElementById('shap-live-img');
+                    const ph = document.getElementById('shap-live-ph');
+                    img.src = d.shap; img.classList.remove('hidden'); ph.classList.add('hidden');
+                } else {
+                    alert(d.error || 'SHAP generation failed');
+                }
+            } catch (e) { console.error(e); }
+            btn.textContent = 'Regenerate'; btn.disabled = false;
+        }
+    </script>
+</body>
+
+</html>
